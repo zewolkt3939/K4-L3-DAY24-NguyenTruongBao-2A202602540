@@ -39,3 +39,13 @@
 - WSL Kali Linux, Python 3.13.12, pytest 9.0.3: `python3 -m pytest tests/test_obo.py tests/test_policy.py -v` → **9 passed**, gồm đủ **5/5 OBO** và **4/4 policy**. Ledger test dùng thư mục tạm, không thay evidence CP2.
 - Do test OBO yêu cầu ghi ledger, đã triển khai `agent/ledger.py:append()` với hash chain như dependency của CP3c. `verify()` còn stub; kiểm chứng tampering sẽ làm ở CP3e.
 - Runner hiện là một run có quyền search/read và không egress; chưa hoàn tất trifecta split. CP3d sẽ tách run với boundary typed và bổ sung bằng chứng deny egress; chưa tạo attack-after hoặc tuyên bố hoàn tất containment.
+
+## Checkpoint 3d — Trifecta split
+
+- Xác nhận commit CP3c: `3e8cbe5`; chỉ chỉnh runner và báo cáo ở checkpoint này.
+- Run A chỉ có `search_docs`, không egress; đọc/scan injection và redact ticket tại Run A. Không dùng customer ID hoặc URL do LLM trích từ attacker text.
+- Boundary sang Run B chỉ có `list[int]` ID từ tên file (cặp 904/904b cùng ID 904). Run B kiểm kiểu, chỉ có `read_customer`, không egress; map khách qua `related_tickets` tin cậy.
+- Một run egress riêng chỉ có `http_post`, nhận record từ Run B và URL localhost cố định từ cấu hình. Policy deny restricted+egress trước khi tool execute; log đầy đủ reason. Không run nào có cả search/private/egress. Đây là tách capability logic trong một process lab, không phải sandbox OS hay xác thực production.
+- WSL Kali Linux: `python3 -m pytest tests/test_split.py tests/test_obo.py tests/test_injection.py tests/test_policy.py -q` → **18 passed**, không skip. Bao gồm 4 lure × 2 principal, không đọc KH-000777 theo free text và vẫn đọc khách hợp lệ.
+- Kiểm thêm bằng mock tool trên Python Windows: `dpo` có 3 run ID riêng, 23 tool decisions; mỗi run đúng scope; egress thực thi 0 lần và có deny vì restricted; tất cả entry có reason/OBO; ledger không chứa raw records. Boundary từ chối string, bool, số âm và list chứa string. Spy LLM xác nhận summarize nhận văn bản đã redact đủ 4 loại PII.
+- `injection_scan` là event observation, không phải tool call; không lưu text/marker/ID khách thô, chỉ args hash và cờ nhận diện. Test ghi ledger vào thư mục tạm; evidence CP2 giữ nguyên. `verify()` và chứng minh tampering còn chờ CP3e; log after chính thức cùng mapping/DPIA chờ CP5.

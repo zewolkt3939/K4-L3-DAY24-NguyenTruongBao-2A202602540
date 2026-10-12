@@ -60,6 +60,7 @@ Interface bắt buộc (agent/loop.py import và gọi hàm này nếu tồn t�
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -76,59 +77,106 @@ class RunnerScaffoldPending(NotImplementedError):
     """Only the original 3c stub uses this to enable the CP1/CP2 baseline."""
 
 
-def handle(message: str, llm, log_dir: Path | None = None,
-           principal_id: str = "support_l1") -> str:
-    """CP3c: authorize each call for the simulated principal, without egress.
+@dataclass(frozen=True)
+class _Run:
+    agent_id: str
+    run_id: str
+    principal_id: str
+    scopes: tuple[str, ...]
+    egress_enabled: bool
+    expires_at: str
+    ledger_path: Path
 
-    This run still has both document and customer access. CP3d separates
-    these capabilities into runs connected only by typed ticket IDs.
-    """
-    run_id = str(uuid4())
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
-    ledger_path = (Path(log_dir) if log_dir is not None else REPORTS_DIR) / "ledger.jsonl"
+    def record(self, tool, args, classification, decision, reason, **details):
+        ledger.append({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "agent_id": self.agent_id,
+            "run_id": self.run_id,
+            "on_behalf_of": self.principal_id,
+            "expires_at": self.expires_at,
+            "tool": tool,
+            "args_hash": hashlib.sha256(json.dumps(args, sort_keys=True).encode("utf-8")).hexdigest(),
+            "classification": classification,
+            "decision": decision,
+            "reason": reason,
+            **details,
+        }, self.ledger_path)
 
-    def invoke(tool_name, args, classification):
+    def invoke(self, tool_name, args, classification):
         context = policy.PolicyContext(
             data_classification=classification,
             request_purpose="support-reply",
-            agent_owner="lab24-agent/obo",
+            agent_owner=self.agent_id,
             delegation_depth=0,
-            egress_enabled=False,
-            principal_id=principal_id,
+            egress_enabled=self.egress_enabled,
+            principal_id=self.principal_id,
             requested_tool=tool_name,
-            agent_scopes=("search_docs", "read_customer"),
+            agent_scopes=self.scopes,
             parent_scopes=(),
-            expires_at=expires_at,
+            expires_at=self.expires_at,
         )
         allow, reason = policy.check(context)
-        ledger.append({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "agent_id": context.agent_owner,
-            "run_id": run_id,
-            "on_behalf_of": principal_id,
-            "expires_at": expires_at,
-            "tool": tool_name,
-            "args_hash": hashlib.sha256(json.dumps(args, sort_keys=True).encode("utf-8")).hexdigest(),
-            "classification": classification,
-            "decision": "allow" if allow else "deny",
-            "reason": reason,
-        }, ledger_path)
+        self.record(tool_name, args, classification, "allow" if allow else "deny", reason,
+                    event_type="tool_call", agent_scopes=list(self.scopes),
+                    parent_scopes=[], delegation_depth=0, egress_enabled=self.egress_enabled)
         if not allow:
             return None
         return getattr(tools, tool_name)(**args)
 
-    docs = invoke("search_docs", {"query": message}, "internal")
+
+def _run_a(message: str, llm, run: _Run) -> tuple[list[int], str]:
+    """Untrusted text stays here; only typed filename IDs cross to Run B."""
+    docs = run.invoke("search_docs", {"query": message}, "internal")
     if docs is None:
-        return "Yêu cầu bị từ chối bởi policy."
-    # IDs come from filenames, never from attacker instructions in document text.
+        return [], "Yêu cầu bị từ chối bởi policy."
+    combined = "\n\n".join(doc["text"] for doc in docs)
+    injected = llm.find_injection(combined)
+    run.record("injection_scan", {"text": combined}, "internal", "observe",
+               "Injection detected; document instructions are not delegated" if injected
+               else "No injection detected; filename-only boundary still enforced",
+               event_type="observation", injection_detected=injected is not None)
     ticket_ids = set()
     for doc in docs:
         match = re.fullmatch(r"ticket-([0-9]+)(?:b)?\.md", doc["id"])
         if match:
             ticket_ids.add(int(match.group(1)))
-    customers = json.loads(tools.CUSTOMERS_FILE.read_text(encoding="utf-8"))
-    for customer in customers:
-        if ticket_ids.intersection(customer.get("related_tickets", [])):
-            invoke("read_customer", {"customer_id": customer["customer_id"]}, "restricted")
     sanitized_docs = [{"id": doc["id"], "text": pii.redact(doc["text"])} for doc in docs]
-    return llm.summarize(sanitized_docs)
+    return sorted(ticket_ids), llm.summarize(sanitized_docs)
+
+
+def _run_b(ticket_ids: list[int], run: _Run) -> list[dict]:
+    """Private lookup uses the trusted relation, never document text or LLM IDs."""
+    if not isinstance(ticket_ids, list) or any(type(value) is not int or value < 0 for value in ticket_ids):
+        raise ValueError("Run B requires a list of non-negative integer ticket IDs")
+    customers = json.loads(tools.CUSTOMERS_FILE.read_text(encoding="utf-8"))
+    records = []
+    selected = set(ticket_ids)
+    for customer in customers:
+        if selected.intersection(customer.get("related_tickets", [])):
+            record = run.invoke("read_customer", {"customer_id": customer["customer_id"]}, "restricted")
+            if record is not None:
+                records.append(record)
+    return records
+
+
+def handle(message: str, llm, log_dir: Path | None = None,
+           principal_id: str = "support_l1") -> str:
+    ledger_path = (Path(log_dir) if log_dir is not None else REPORTS_DIR) / "ledger.jsonl"
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+
+    def make_run(name, scopes, egress=False):
+        return _Run(f"lab24-agent/{name}", str(uuid4()), principal_id,
+                    scopes, egress, expires_at, ledger_path)
+
+    ticket_ids, answer = _run_a(message, llm, make_run("run-a", ("search_docs",)))
+    if not ticket_ids:
+        return answer
+    records = _run_b(ticket_ids, make_run("run-b", ("read_customer",)))
+    if records:
+        # Separate egress evaluation has no search/read capability or attacker text.
+        # The fixed lab destination is trusted configuration, not an injected URL.
+        make_run("run-egress", ("http_post",), egress=True).invoke(
+            "http_post", {"url": "http://127.0.0.1:10024/reconcile", "body": {"records": records}},
+            "restricted",
+        )
+    return answer
