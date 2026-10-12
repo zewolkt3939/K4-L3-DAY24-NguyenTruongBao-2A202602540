@@ -43,11 +43,13 @@ import json
 
 
 def append(entry: dict, path: Path) -> dict:
-    """Append a canonical hash-linked entry; verification follows in CP3e."""
+    """Append a canonical hash-linked entry without rewriting existing lines."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = "0" * 64
     if path.exists():
+        if not verify(path):
+            raise ValueError("Refusing to append to an invalid ledger")
         lines = path.read_text(encoding="utf-8").splitlines()
         if lines:
             previous = json.loads(lines[-1])["hash"]
@@ -61,4 +63,27 @@ def append(entry: dict, path: Path) -> dict:
 
 
 def verify(path: Path) -> bool:
-    raise NotImplementedError("BƯỚC 3d: implement ledger verify")
+    """Check the observed chain; no external anchor protects against truncation."""
+    previous = "0" * 64
+    required = {"ts", "agent_id", "run_id", "tool", "args_hash", "classification",
+                "decision", "reason", "prev_hash", "hash"}
+    try:
+        with Path(path).open(encoding="utf-8") as source:
+            for line in source:
+                record = json.loads(line)
+                if not isinstance(record, dict) or not required.issubset(record):
+                    return False
+                reason = record["reason"]
+                if not isinstance(reason, str) or not reason.strip():
+                    return False
+                if record["prev_hash"] != previous:
+                    return False
+                stored_hash = record.pop("hash")
+                canonical = json.dumps(record, sort_keys=True)
+                calculated = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+                if stored_hash != calculated:
+                    return False
+                previous = stored_hash
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return False
+    return True

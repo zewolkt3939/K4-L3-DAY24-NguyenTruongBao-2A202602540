@@ -1,0 +1,10 @@
+{
+  "line_count": 3,
+  "tampered_line": 2,
+  "characters_changed": 1,
+  "field": "reason",
+  "change": "Synthetic -> synthetic",
+  "hash_recomputed": false,
+  "verify_before": true,
+  "verify_after": false
+}

@@ -49,3 +49,12 @@
 - WSL Kali Linux: `python3 -m pytest tests/test_split.py tests/test_obo.py tests/test_injection.py tests/test_policy.py -q` → **18 passed**, không skip. Bao gồm 4 lure × 2 principal, không đọc KH-000777 theo free text và vẫn đọc khách hợp lệ.
 - Kiểm thêm bằng mock tool trên Python Windows: `dpo` có 3 run ID riêng, 23 tool decisions; mỗi run đúng scope; egress thực thi 0 lần và có deny vì restricted; tất cả entry có reason/OBO; ledger không chứa raw records. Boundary từ chối string, bool, số âm và list chứa string. Spy LLM xác nhận summarize nhận văn bản đã redact đủ 4 loại PII.
 - `injection_scan` là event observation, không phải tool call; không lưu text/marker/ID khách thô, chỉ args hash và cờ nhận diện. Test ghi ledger vào thư mục tạm; evidence CP2 giữ nguyên. `verify()` và chứng minh tampering còn chờ CP3e; log after chính thức cùng mapping/DPIA chờ CP5.
+
+## Checkpoint 3e — Ledger verify và tampering
+
+- Xác nhận commit CP3d: `798f6f3`; hoàn thiện `verify()` kiểm required fields, reason non-empty/non-whitespace, prev_hash và SHA-256 tính lại theo JSON sort_keys. File lỗi/mất trả False; file rỗng trả True (chưa có entry để kiểm).
+- `append()` giữ nguyên dòng cũ, tự thêm prev_hash/hash và từ chối append nếu chuỗi hiện có không hợp lệ. Không có log PII thô.
+- WSL Kali Linux: `python3 -m pytest tests/test_ledger.py tests/test_split.py tests/test_obo.py tests/test_injection.py -q` → **17 passed**, gồm **3/3 ledger**; không skip.
+- `python3 scripts/check_ledger_tampering.py` → verify_before=True, verify_after=False. Tạo 3 dòng synthetic, đổi đúng một ký tự S thành s trong reason dòng 2, không tính lại hash. Bằng chứng lưu ở `reports/ledger-tampering.json`; script dùng file tạm, không sửa ledger nộp bài.
+- Kiểm thêm trên Python Windows: file mất/rỗng/hợp lệ, JSON lỗi, dòng không phải object, xoá/chèn/đảo dòng và từ chối append chuỗi lỗi đều đúng; xác nhận cắt đuôi vẫn có thể verify=True.
+- Giới hạn: hash chain trong file không phát hiện xoá đuôi hoặc viết lại toàn bộ chuỗi với hash mới nếu thiếu mốc tin cậy bên ngoài; không bảo đảm chống ghi đồng thời nhiều process. Ledger chính thức `reports/ledger.jsonl` sẽ tạo khi replay CP5.
