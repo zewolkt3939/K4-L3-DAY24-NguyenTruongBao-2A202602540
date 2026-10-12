@@ -30,3 +30,12 @@
 - WSL Kali Linux, Python 3.13.12, pytest 9.0.3: `python3 -m pytest tests/test_policy.py -v` → **4 passed**.
 - Kiểm bổ sung trên Python Windows: 14 trường hợp đạt (allow hợp lệ; deny sai principal/purpose, thiếu scope, vượt quyền cha, TTL hết hạn/không timezone/sai định dạng, classification/tool/depth sai và restricted+egress; allow delegation đúng scope).
 - Chưa tích hợp kiểm policy trước tool call hoặc ghi ledger trong runner. CP3c tiếp tục OBO ở runner; chưa khẳng định đã containment hay đã hoàn tất checkpoint OBO.
+
+## Checkpoint 3c — OBO
+
+- Xác nhận CP3b đã commit: `b1f9546`; working tree sạch trước khi triển khai.
+- Runner tạo identity/run ID riêng và TTL 5 phút; mọi tool call qua `policy.check()` rồi `ledger.append()` trước khi execute. Deny không gọi tool. Ledger ghi `on_behalf_of`, `agent_id`, `run_id`, `expires_at`, decision/reason và hash của args, không ghi args/record PII thô.
+- `support_l1` bị chặn trước `tools.read_customer()`; `dpo` vẫn đọc được khách liên quan ticket. Customer ID được suy từ tên file ticket và fixture `related_tickets`, không lấy từ nội dung attacker. Redact ticket trước khi gửi cho summarize.
+- WSL Kali Linux, Python 3.13.12, pytest 9.0.3: `python3 -m pytest tests/test_obo.py tests/test_policy.py -v` → **9 passed**, gồm đủ **5/5 OBO** và **4/4 policy**. Ledger test dùng thư mục tạm, không thay evidence CP2.
+- Do test OBO yêu cầu ghi ledger, đã triển khai `agent/ledger.py:append()` với hash chain như dependency của CP3c. `verify()` còn stub; kiểm chứng tampering sẽ làm ở CP3e.
+- Runner hiện là một run có quyền search/read và không egress; chưa hoàn tất trifecta split. CP3d sẽ tách run với boundary typed và bổ sung bằng chứng deny egress; chưa tạo attack-after hoặc tuyên bố hoàn tất containment.

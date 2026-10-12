@@ -60,6 +60,13 @@ Interface bắt buộc (agent/loop.py import và gọi hàm này nếu tồn t�
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import re
+from uuid import uuid4
+
+from agent import ledger, pii, policy, tools
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
 DEFAULT_LEDGER_PATH = REPORTS_DIR / "ledger.jsonl"
@@ -71,4 +78,57 @@ class RunnerScaffoldPending(NotImplementedError):
 
 def handle(message: str, llm, log_dir: Path | None = None,
            principal_id: str = "support_l1") -> str:
-    raise RunnerScaffoldPending("BƯỚC 3c: implement trifecta split")
+    """CP3c: authorize each call for the simulated principal, without egress.
+
+    This run still has both document and customer access. CP3d separates
+    these capabilities into runs connected only by typed ticket IDs.
+    """
+    run_id = str(uuid4())
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    ledger_path = (Path(log_dir) if log_dir is not None else REPORTS_DIR) / "ledger.jsonl"
+
+    def invoke(tool_name, args, classification):
+        context = policy.PolicyContext(
+            data_classification=classification,
+            request_purpose="support-reply",
+            agent_owner="lab24-agent/obo",
+            delegation_depth=0,
+            egress_enabled=False,
+            principal_id=principal_id,
+            requested_tool=tool_name,
+            agent_scopes=("search_docs", "read_customer"),
+            parent_scopes=(),
+            expires_at=expires_at,
+        )
+        allow, reason = policy.check(context)
+        ledger.append({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "agent_id": context.agent_owner,
+            "run_id": run_id,
+            "on_behalf_of": principal_id,
+            "expires_at": expires_at,
+            "tool": tool_name,
+            "args_hash": hashlib.sha256(json.dumps(args, sort_keys=True).encode("utf-8")).hexdigest(),
+            "classification": classification,
+            "decision": "allow" if allow else "deny",
+            "reason": reason,
+        }, ledger_path)
+        if not allow:
+            return None
+        return getattr(tools, tool_name)(**args)
+
+    docs = invoke("search_docs", {"query": message}, "internal")
+    if docs is None:
+        return "Yêu cầu bị từ chối bởi policy."
+    # IDs come from filenames, never from attacker instructions in document text.
+    ticket_ids = set()
+    for doc in docs:
+        match = re.fullmatch(r"ticket-([0-9]+)(?:b)?\.md", doc["id"])
+        if match:
+            ticket_ids.add(int(match.group(1)))
+    customers = json.loads(tools.CUSTOMERS_FILE.read_text(encoding="utf-8"))
+    for customer in customers:
+        if ticket_ids.intersection(customer.get("related_tickets", [])):
+            invoke("read_customer", {"customer_id": customer["customer_id"]}, "restricted")
+    sanitized_docs = [{"id": doc["id"], "text": pii.redact(doc["text"])} for doc in docs]
+    return llm.summarize(sanitized_docs)

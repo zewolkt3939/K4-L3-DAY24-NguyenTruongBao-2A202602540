@@ -38,10 +38,26 @@ rồi gọi verify() phải trả về False.
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 
 
 def append(entry: dict, path: Path) -> dict:
-    raise NotImplementedError("BƯỚC 3d: implement ledger append")
+    """Append a canonical hash-linked entry; verification follows in CP3e."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    previous = "0" * 64
+    if path.exists():
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if lines:
+            previous = json.loads(lines[-1])["hash"]
+    record = {key: value for key, value in entry.items() if key not in {"hash", "prev_hash"}}
+    record["prev_hash"] = previous
+    canonical = json.dumps(record, sort_keys=True)
+    record["hash"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    with path.open("a", encoding="utf-8") as output:
+        output.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record
 
 
 def verify(path: Path) -> bool:
