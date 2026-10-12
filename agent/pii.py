@@ -30,10 +30,36 @@ set ở tests/vn_pii_testset.jsonl):
 """
 from __future__ import annotations
 
+import re
+
+
+# Context distinguishes bank accounts from CCCD/phone numbers of equal length.
+# Higher-priority recognizers reserve their spans before generic numeric rules.
+_RECOGNIZERS = (
+    ("EMAIL", re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")),
+    ("VN_BANK_ACCOUNT", re.compile(
+        r"\b(?:STK|số\s+tài\s+khoản|so\s+tai\s+khoan)\s*[:=-]?\s*(?P<value>[0-9]{8,16})(?!\w)",
+        re.IGNORECASE,
+    )),
+    ("VN_CCCD", re.compile(r"(?<!\w)[0-9]{12}(?!\w)")),
+    ("VN_PHONE", re.compile(r"(?<!\w)0(?:[ -]?[0-9]){9,10}(?!\w)")),
+)
+
 
 def detect(text: str) -> list[dict]:
-    raise NotImplementedError("BƯỚC 3a: implement PII detection")
+    """Return character spans without storing or logging the matched values."""
+    entities = []
+    for entity_type, pattern in _RECOGNIZERS:
+        for match in pattern.finditer(text):
+            start, end = match.span("value" if entity_type == "VN_BANK_ACCOUNT" else 0)
+            if any(start < entity["end"] and entity["start"] < end for entity in entities):
+                continue
+            entities.append({"type": entity_type, "start": start, "end": end})
+    return sorted(entities, key=lambda entity: (entity["start"], entity["end"]))
 
 
 def redact(text: str) -> str:
-    raise NotImplementedError("BƯỚC 3a: implement PII redaction")
+    """Replace disjoint spans from right to left to preserve original offsets."""
+    for entity in reversed(detect(text)):
+        text = text[:entity["start"]] + f"[REDACTED_{entity['type']}]" + text[entity["end"]:]
+    return text
