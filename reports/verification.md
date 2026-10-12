@@ -1,10 +1,10 @@
-# Verification — điền trước khi nộp
+# Verification — Kết quả cuối CP5
 
-- OS / Python / Gitleaks version:
-- `python -m pytest tests/ -q`:
-- `pre-commit run --all-files`:
-- Ledger verify:
-- Các lỗi còn lại:
+- OS / Python / Gitleaks version: WSL Kali Linux, Python 3.13.12, pytest 9.1.1, requests 2.34.2 (locked venv); Gitleaks 8.30.1. Hook chạy trên Windows với pre-commit 4.6.2.
+- `python -m pytest tests/ -q`: **33 passed**, exit=0, không fail/skip trên WSL; `reports/pytest-final-wsl.txt:2`.
+- `pre-commit run --all-files`: Passed, exit=0; `reports/pre-commit-final.txt:1`.
+- Ledger verify: **True**, 47 entry; reason/OBO đầy đủ; `http_post` deny ở `reports/ledger.jsonl:47`.
+- Các lỗi còn lại: Windows native chạy full suite có 17 passed/16 setup errors do quyền thư mục tmp; WSL chạy đầy đủ đạt. Giới hạn mock/regex/ledger và môi trường được nêu ở DPIA-lite. Commit CP5 và SHA cuối do sinh viên tự thực hiện.
 
 ## Checkpoint 2 — kiểm tra thực tế
 
@@ -70,3 +70,16 @@
 - Test supply-chain đầu chạy khi incident note còn mẫu: 1 failed/2 passed; sau khi điền finding thực tế, test cuối đạt 3/3. Một assertion probe ban đầu kỳ vọng rule ID trong output mặc định (không verbose) không đạt; kiểm lại exit code cho probe/clean đạt 1/0. Không sửa test bắt buộc.
 - WSL chạy lại test bị `Wsl/Service/HCS_E_CONNECTION_TIMEOUT`; tái hiện ở lệnh WSL gọi locked-venv pytest. Chuyển kiểm CP4 sang venv Windows riêng; Python Windows mặc định thiếu pytest, đã cài pytest/requests trong venv tooling (ngoài repo). CP5 cần thử lại WSL và ghi kết quả OS thật.
 - Trước commit thủ công bằng PowerShell, thêm bin Gitleaks và venv tooling vào PATH như hướng dẫn trong incident note. Không dùng `--no-verify`; không nộp tool binaries/venv. Các file scanner redacted không chứa token thô.
+
+
+## Checkpoint 5 — Prove và đối chiếu hồ sơ
+
+- Xác nhận CP4 đã commit: `fad179e`; bộ test/control bắt buộc được giữ nguyên trong CP5.
+- Reset sink và chạy full suite trên WSL với venv cài hash lock: `~/.local/share/lab24/locked-venv/bin/python -m pytest tests/ -q` → **33 passed in 5.15s**, exit=0. Evidence `reports/pytest-final-wsl.txt`. Lỗi WSL timeout CP4 không lặp lại trong lần này (vẫn có cảnh báo NAT fallback).
+- Lần thử Windows native: **17 passed, 16 errors** do fixture tmp bị `PermissionError: [WinError 5]` tại `C:/Users/Admin/AppData/Local/Temp/pytest-of-Admin`; evidence `reports/pytest-final-windows.txt:116`. Không sửa test, không kết luận test pass trên Windows.
+- Sau test, chạy `~/.local/share/lab24/locked-venv/bin/python scripts/prove_containment.py`: 8 replay riêng × 2 principal, actual_posts=0, sink=0 byte; support không gọi read_customer, dpo đọc KH-000999 hợp lệ và có deny POST; từng ledger verify=True. Evidence `reports/cp5-results.json` chứa ledger entries của từng replay.
+- CLI toàn corpus chạy lại support_l1 rồi dpo với đúng query CP2, mỗi lần reset sink; vẫn tổng hợp 45 ticket. `reports/replay-after.txt` ghi câu trả lời CLI. `reports/attack-after.log` copy từ sink của lần dpo cuối (0 byte), không lấy từ trạng thái reset sau pytest. Before CP2 không sửa.
+- Ledger chính thức `reports/ledger.jsonl`: 47 entry, 45 tool-call decisions và 2 observation; 21 read deny cho support, 21 read allow cho dpo, 1 egress deny; mọi entry có reason/OBO/run_id/expiry. verify=True; không chứa giá trị CCCD/SĐT/STK/email thô của fixture. Ledger hash chain giới hạn như đã ghi ở CP3e.
+- Hoàn thiện `injection-corpus.md` với after cả 4 lure; `reports/compliance-mapping.md` trỏ file/dòng thực tế và nguồn PDF gốc Chính phủ; `reports/dpia-lite.md` ghi dữ liệu, purpose, luồng, bằng chứng và giới hạn. Đã đọc ảnh trang 2 Luật 91, trang 2–3 NĐ 356, trang 2 Luật AI 134; đối chiếu các khoản nêu trong mapping, không tuyên bố tuân thủ toàn bộ pháp luật. OWASP dùng nguồn chính thức ASI01/03/04.
+- Tái hiện CP5 trên WSL: chạy full suite trước, sau đó `scripts/prove_containment.py`. Script tự mở/đóng sink và dùng corpus/ledger tạm cho replay riêng; ledger cuối append, không xoá evidence cũ. Nếu replay lại, số entry tăng; kiểm verify và không coi số 47 là bất biến.
+- Bộ file nộp theo SUBMISSION được đối chiếu ở `reports/submission-check.json`; attack-after/ledger bị gitignore nên sinh viên cần `git add -f` đúng hai file. Không stage/commit sink.log/venv; ghi SHA cuối sau manual commit theo thông báo coach/TA.

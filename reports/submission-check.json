@@ -1,0 +1,39 @@
+{
+  "required_files": [
+    "agent/pii.py",
+    "agent/policy.py",
+    "agent/runner.py",
+    "agent/ledger.py",
+    "corpus/ticket-901.md",
+    "corpus/ticket-902.md",
+    "corpus/ticket-903.md",
+    "corpus/ticket-904.md",
+    "corpus/ticket-904b.md",
+    ".pre-commit-config.yaml",
+    "requirements.lock",
+    "reports/secrets-incident.md",
+    "injection-corpus.md",
+    "reports/baseline.md",
+    "reports/attack-before.log",
+    "reports/attack-after.log",
+    "reports/ledger.jsonl",
+    "reports/compliance-mapping.md",
+    "reports/dpia-lite.md",
+    "reports/verification.md"
+  ],
+  "required_count": 20,
+  "missing_files": [],
+  "baseline_unchanged": true,
+  "control_and_required_tests_unchanged_in_cp5": true,
+  "full_suite_wsl": "33 passed",
+  "ledger_valid": true,
+  "ledger_entries": 47,
+  "attack_after_bytes": 0,
+  "isolated_replays": 8,
+  "mandatory_evidence_to_force_add": [
+    "reports/attack-after.log",
+    "reports/ledger.jsonl"
+  ],
+  "manual_commit_pending": true,
+  "final_sha": "Obtain with git rev-parse HEAD after manual CP5 commit"
+}

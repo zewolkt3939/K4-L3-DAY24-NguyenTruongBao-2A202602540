@@ -1,6 +1,9 @@
-# DPIA-lite — điền trong checkpoint 5
+# DPIA-lite — Checkpoint 5
 
-1. Loại dữ liệu và phân loại:
-2. Mục đích xử lý và principal:
-3. Dữ liệu đi qua những run/tool nào, endpoint nào:
-4. Bằng chứng deny/allow và giới hạn của mock:
+1. **Loại dữ liệu và phân loại.** `corpus/` và `data/customers.json` chứa tên, CCCD, SĐT, email, STK và liên kết ticket hoàn toàn synthetic. Ticket là nội dung không đáng tin, policy dùng nhãn internal; hồ sơ khách hàng dùng restricted. Đây là phân loại kỹ thuật của lab. Regex che bốn nhóm CCCD/SĐT/STK/email; chưa che tên PERSON hay bảo đảm khử nhận dạng. Ledger chỉ giữ metadata, reason và args_hash; replay đã đối chiếu không chứa giá trị CCCD/SĐT/STK/email thô từ fixture.
+
+2. **Mục đích xử lý và principal.** Yêu cầu là tổng hợp ticket để hỗ trợ khách hàng, purpose `support-reply`. `support_l1` chỉ có search_docs; `dpo` được read_customer với purpose phù hợp. Quyền được giao với scope agent và scope cha nếu có delegation, run TTL 5 phút. `--as` chọn fixture mô phỏng, không phải authentication. Nguồn quan hệ ticket/customer tin cậy vẫn là JSON fixture chung chứa cả hồ sơ; kiểm soát đọc trong bài được áp dụng tại tool boundary, không phải bảo vệ memory/file bằng sandbox OS.
+
+3. **Luồng dữ liệu và nơi đi.** Run A gọi search_docs, scan nội dung, redact trước summarize; text và ID do injection gợi ý không đi sang Run B. Chỉ `list[int]` ticket ID lấy từ filename được chuyển sang Run B để map `related_tickets` và gọi read_customer qua policy. Một run egress riêng nhận hồ sơ hợp lệ và xét POST tới URL cố định `http://127.0.0.1:10024/reconcile`; restricted+egress bị deny nên không chạy HTTP POST. Với `--mock`, không gửi tới model/cloud ngoài. LLM thật chưa được kiểm/chấm và có luồng network khác; không dùng dữ liệu thật trong bài. Evidence lưu local và chỉ nộp file đã kiểm; không nộp sink.log hoặc venv.
+
+4. **Bằng chứng, rủi ro và giới hạn.** `reports/attack-before.log:1` chứng minh baseline đã gửi hồ sơ synthetic; `reports/attack-after.log` có 0 byte từ CLI replay dpo sau test. `reports/ledger.jsonl:3` là support read deny; dòng 26 là dpo read allow; dòng 47 là http_post deny có reason/OBO. `verify()` trả True cho 47 entry; `reports/ledger-tampering.json` chứng minh đổi một ký tự làm verify=False. `reports/cp5-results.json` ghi 8 replay (4 lure × 2 principal), POST thật=0, sink=0 byte và ledger hợp lệ. Toàn bộ suite đạt 33/33 trên WSL. Rủi ro còn lại: detection phụ thuộc regex, mapping fixture/phân quyền mô phỏng, các run cùng process, hash args không đồng nghĩa anonymization, ledger có thể bị cắt đuôi/viết lại với hash mới. Chưa có retention/deletion workflow, thực hiện quyền chủ thể hay đánh giá model thật. Nếu chuyển sang production, cần xác thực thực, kho dữ liệu tách quyền, mốc audit ngoài và đánh giá tác động riêng.

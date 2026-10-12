@@ -1,10 +1,14 @@
-# Compliance mapping — điền trong checkpoint 5
+# Compliance mapping — Checkpoint 5
 
-| Nguồn / yêu cầu | Control đã làm | Evidence file:dòng | Giới hạn |
+Đối chiếu ngày 12/10/2026 với bản PDF có chữ ký trên Cổng Chính phủ và nguồn OWASP chính thức. Các liên hệ control dưới đây là phân tích kỹ thuật cho lab synthetic; không phải chứng nhận tuân thủ pháp luật.
+
+| Nguồn / yêu cầu đã đối chiếu | Control đã làm | Evidence file:dòng | Giới hạn |
 |---|---|---|---|
-| Luật 91/2025/QH15 | | | |
-| NĐ 356/2025/NĐ-CP | | | |
-| Luật AI 134/2025/QH15 | | | |
-| OWASP ASI01, ASI03, ASI04 | | | |
+| [Luật 91/2025/QH15, Điều 3 khoản 2 và 4, trang 2](https://datafiles.chinhphu.vn/cpp/files/vbpq/2025/7/91qh.signed.pdf#page=2): giới hạn phạm vi/mục đích xử lý; áp dụng biện pháp bảo vệ | Purpose allowlist, PII redaction, chặn restricted+egress | `agent/policy.py:96`; `agent/pii.py:61`; `reports/ledger.jsonl:47` | Chưa có cơ chế đồng ý, thực hiện quyền chủ thể hoặc thời hạn lưu dữ liệu production; dữ liệu trong lab là giả |
+| [NĐ 356/2025/NĐ-CP, Điều 3 khoản 7, trang 2; Điều 4 khoản 2, trang 3](https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/01/356-nd.signed.pdf#page=2): phân loại thông tin định danh; giới hạn truy cập dữ liệu nhạy cảm | Phân loại hồ sơ restricted trong lab, giao scope, deny support và allow dpo theo purpose | `agent/policy.py:101`; `agent/runner.py:156`; `reports/ledger.jsonl:3`; `reports/ledger.jsonl:26` | Phân loại restricted là lựa chọn kỹ thuật, không đồng nhất với mọi loại dữ liệu nhạy cảm theo pháp luật; principal chỉ mô phỏng |
+| [Luật AI 134/2025/QH15, Điều 4 khoản 2–3, trang 2](https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/01/luat134.signed.pdf#page=2): kiểm soát, an ninh dữ liệu, giám sát và giải trình | Policy trước tool call; ledger có reason, OBO và hash chain; replay before/after | `agent/runner.py:118`; `agent/ledger.py:65`; `reports/ledger.jsonl:47`; `reports/pytest-final-wsl.txt:2` | Mock không chứng minh an toàn model thật; hash chain không phát hiện cắt đuôi/viết lại toàn bộ khi thiếu mốc ngoài; chưa có cơ chế can thiệp người dùng production |
+| [OWASP ASI01 — Agent Goal Hijack](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/): nội dung ngoài làm lệch mục tiêu agent | Run A giữ text không đáng tin; Run B chỉ nhận ID số lấy từ filename và map nguồn tin cậy | `agent/runner.py:127`; `agent/runner.py:147`; `reports/cp5-results.json:8`; `reports/pytest-final-wsl.txt:2` | Không dựa vào filter chuỗi; chỉ chứng minh 4 lure mock và case KH-000777 trong test, chưa có sandbox process |
+| [OWASP ASI03 — Identity & Privilege Abuse](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/): lạm dụng danh tính/quyền | Principal ∩ agent scope ∩ parent scope; kiểm purpose/TTL; log quyền đại diện | `agent/policy.py:77`; `agent/policy.py:101`; `data/principals.json:2`; `reports/ledger.jsonl:3` | `--as` không xác thực người dùng; parent scope được unit-test nhưng các run trong runner là sibling, depth=0 |
+| [OWASP ASI04 — Agentic Supply Chain Vulnerabilities](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/): thành phần phụ thuộc bị xâm phạm | Dependency pin/hash, hook Gitleaks pin, quét history/current và incident note | `.pre-commit-config.yaml:3`; `.pre-commit-config.yaml:8`; `requirements.lock:7`; `reports/gitleaks-history.json:3`; `reports/secrets-incident.md:3` | Scanner không thấy mọi secret; hash không chứng minh dependency lành tính; lab chưa thử MCP rug pull; secret thật vẫn phải rotate |
 
-Chỉ ghi điều khoản cụ thể khi đã đối chiếu văn bản gốc. Mô phỏng kỹ thuật không tự chứng minh tuân thủ pháp luật.
+PDF gốc là bản scan nên đã đọc trang render, không suy ra điều khoản từ kết quả tìm kiếm. Báo cáo chỉ đối chiếu các khoản nêu rõ; các nghĩa vụ khác chưa xác minh đầy đủ. DPIA-lite là bài mô phỏng rủi ro, không thay hồ sơ đánh giá tác động pháp lý thực tế.
